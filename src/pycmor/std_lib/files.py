@@ -511,7 +511,10 @@ def save_dataset(da: xr.DataArray, rule):
         filepath = create_filepath(da, rule)
         # Calculate chunking encoding
         if isinstance(da, xr.DataArray):
-            ds_temp = da.to_dataset(name=getattr(da, "name", "data"))
+            # Ensure DataArray has a name before converting to Dataset
+            if da.name is None:
+                da = da.rename("data")
+            ds_temp = da.to_dataset()
         else:
             ds_temp = da
         chunk_encoding = _calculate_netcdf_chunks(ds_temp, rule)
@@ -526,7 +529,10 @@ def save_dataset(da: xr.DataArray, rule):
         filepath = create_filepath(da, rule)
         # Calculate chunking encoding
         if isinstance(da, xr.DataArray):
-            ds_temp = da.to_dataset(name=getattr(da, "name", "data"))
+            # Ensure DataArray has a name before converting to Dataset
+            if da.name is None:
+                da = da.rename("data")
+            ds_temp = da.to_dataset()
         else:
             ds_temp = da
         chunk_encoding = _calculate_netcdf_chunks(ds_temp, rule)
@@ -542,7 +548,10 @@ def save_dataset(da: xr.DataArray, rule):
             **extra_kwargs,
         )
     if isinstance(da, xr.DataArray):
-        da = da.to_dataset(name=getattr(da, "name", "data"))
+        # Ensure DataArray has a name before converting to Dataset
+        if da.name is None:
+            da = da.rename("data")
+        da = da.to_dataset()
 
     # Set time variable attributes
     if rule._pycmor_cfg("xarray_time_set_standard_name"):
@@ -567,7 +576,10 @@ def save_dataset(da: xr.DataArray, rule):
 
         # Convert the dataset to Dataset if it's a DataArray
         if isinstance(da, xr.DataArray):
-            da = da.to_dataset(name=da.name or "data")
+            # Ensure DataArray has a name before converting to Dataset
+            if da.name is None:
+                da = da.rename("data")
+            da = da.to_dataset()
 
         # Get the current time values (should be datetime objects)
         time_values = da[time_label].values
@@ -597,14 +609,20 @@ def save_dataset(da: xr.DataArray, rule):
 
     # Ensure the encoding is set on the time variable itself
     if isinstance(da, xr.DataArray):
-        da = da.to_dataset(name=getattr(da, "name", "data"))
+        # Ensure DataArray has a name before converting to Dataset
+        if da.name is None:
+            da = da.rename("data")
+        da = da.to_dataset()
     da[time_label].encoding.update(time_encoding)
 
     if not has_time_axis(da):
         filepath = create_filepath(da, rule)
         # Calculate chunking encoding
         if isinstance(da, xr.DataArray):
-            ds_temp = da.to_dataset(name=da.name or "data")
+            # Ensure DataArray has a name before converting to Dataset
+            if da.name is None:
+                da = da.rename("data")
+            ds_temp = da.to_dataset()
         else:
             ds_temp = da
         chunk_encoding = _calculate_netcdf_chunks(ds_temp, rule)
