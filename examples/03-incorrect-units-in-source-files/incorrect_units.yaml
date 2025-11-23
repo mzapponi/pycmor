@@ -31,7 +31,7 @@ rules:
   - name: Dissolved Inorganic Carbon in Seawater
     description: "dissic from REcoM, showing missing units in NetCDF"
     inputs:
-      - path: "/work/ab0246/a270077/SciComp/Projects/pymor/examples/03-incorrect-units-in-source-files/model_runs/piControl_LUtrans1850/outdata/recom/"
+      - path: "./model_runs/piControl_LUtrans1850/outdata/recom/"
         pattern: bgc02_fesom_.*.nc
     cmor_variable: dissic
     compound_name: ocnBgchem.dissic.tavg-u-hxy-u.mon.GLB # CMIP7 compound name
@@ -40,7 +40,7 @@ rules:
   - name: Seawater Alkalinity
     description: "talk from REcoM, showing missing units in NetCDF"
     inputs:
-      - path: "/work/ab0246/a270077/SciComp/Projects/pymor/examples/03-incorrect-units-in-source-files/model_runs/piControl_LUtrans1850/outdata/recom/"
+      - path: "./model_runs/piControl_LUtrans1850/outdata/recom/"
         pattern: bgc03_fesom_.*.nc
     cmor_variable: talk
     compound_name: ocnBgchem.talk.tavg-u-hxy-u.mon.GLB # CMIP7 compound name
