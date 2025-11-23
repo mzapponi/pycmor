@@ -18,11 +18,16 @@ Contents
    pycmor_cli
    pycmor_configuration
    pycmor_saving_output
+   netcdf_chunking
    pycmor_aux_files
+   cmip7_configuration
+   cmip7_interface
+   cmip7_controlled_vocabularies
    table_explorer
    pycmor_on_slurm
    schemas
    standard_library
+   coordinate_bounds
    including_custom_steps
    including_subcommand_plugins
    pycmor_fesom
@@ -30,6 +35,7 @@ Contents
    cookbook
    developer_guide
    developer_setup
+   test_infrastructure
    roadmap
    API
 

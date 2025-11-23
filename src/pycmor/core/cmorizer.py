@@ -18,29 +18,30 @@ from rich.progress import track
 from ..data_request.collection import DataRequest
 from ..data_request.table import DataRequestTable
 from ..data_request.variable import DataRequestVariable
+
+# Import CMIP7 interface if available
+try:
+    from ..data_request.cmip7_interface import CMIP7_API_AVAILABLE, CMIP7Interface
+except ImportError:
+    CMIP7Interface = None
+    CMIP7_API_AVAILABLE = False
 from ..std_lib.global_attributes import GlobalAttributes
 from ..std_lib.timeaverage import _frequency_from_approx_interval
 from .aux_files import attach_files_to_rule
-from .cluster import (
-    CLUSTER_ADAPT_SUPPORT,
-    CLUSTER_MAPPINGS,
-    CLUSTER_SCALE_SUPPORT,
-    DaskContext,
-    set_dashboard_link,
-)
+from .cluster import CLUSTER_ADAPT_SUPPORT, CLUSTER_MAPPINGS, CLUSTER_SCALE_SUPPORT, DaskContext, set_dashboard_link
 from .config import PycmorConfig, PycmorConfigManager
 from .controlled_vocabularies import ControlledVocabularies
 from .factory import create_factory
 from .filecache import fc
 from .logging import logger
 from .pipeline import Pipeline
+
+# ResourceLocator classes imported locally in methods to avoid circular imports
 from .rule import Rule
 from .utils import wait_for_workers
 from .validate import GENERAL_VALIDATOR, PIPELINES_VALIDATOR, RULES_VALIDATOR
 
-DIMENSIONLESS_MAPPING_TABLE = files("pycmor.data").joinpath(
-    "dimensionless_mappings.yaml"
-)
+DIMENSIONLESS_MAPPING_TABLE = files("pycmor.data").joinpath("dimensionless_mappings.yaml")
 """Path: The dimenionless unit mapping table, used to recreate meaningful units from
 dimensionless fractional values (e.g. 0.001 --> g/kg)"""
 
@@ -96,9 +97,7 @@ class CMORizer:
         pymor_config = PycmorConfig()
         # NOTE(PG): This variable is for demonstration purposes:
         _pymor_config_dict = {}
-        for namespace, key, value, option in get_runtime_config(
-            self._pymor_cfg, pymor_config
-        ):
+        for namespace, key, value, option in get_runtime_config(self._pymor_cfg, pymor_config):
             full_key = generate_uppercase_key(key, namespace)
             _pymor_config_dict[full_key] = value
         logger.info(yaml.dump(_pymor_config_dict))
@@ -127,6 +126,7 @@ class CMORizer:
         self._post_init_create_rules()
         self._post_init_create_data_request_tables()
         self._post_init_create_data_request()
+        self._post_init_create_cmip7_interface()
         self._post_init_populate_rules_with_tables()
         self._post_init_populate_rules_with_dimensionless_unit_mappings()
         self._post_init_populate_rules_with_aux_files()
@@ -141,6 +141,34 @@ class CMORizer:
         """Gracefully close the cluster if it exists"""
         if self._cluster is not None:
             self._cluster.close()
+
+    def _get_versioned_class(self, base_class):
+        """
+        Get the appropriate subclass for current CMOR version via factory pattern.
+
+        This helper method eliminates repeated factory boilerplate throughout
+        the codebase. It centralizes the pattern of getting version-specific
+        implementations.
+
+        Parameters
+        ----------
+        base_class : type
+            Base class with MetaFactory metaclass (e.g., DataRequest, TableLocator)
+
+        Returns
+        -------
+        type
+            Concrete subclass for self.cmor_version (e.g., CMIP6DataRequest)
+
+        Examples
+        --------
+        Example of how this is used internally::
+
+            DataRequestClass = self._get_versioned_class(DataRequest)
+            # Returns CMIP6DataRequest if cmor_version is "CMIP6"
+        """
+        factory = create_factory(base_class)
+        return factory.get(self.cmor_version)
 
     @staticmethod
     def _ensure_dask_slurm_account(jobqueue_cfg):
@@ -196,9 +224,7 @@ class CMORizer:
             else:
                 logger.warning(f"{self._cluster} does not support fixed scaing")
         else:
-            raise ValueError(
-                "You need to specify adapt or fixed for pymor.dask_cluster_scaling_mode"
-            )
+            raise ValueError("You need to specify adapt or fixed for pymor.dask_cluster_scaling_mode")
         # FIXME: Include the gateway option if possible
         # FIXME: Does ``Client`` needs to be available here?
         logger.info(f"Cluster can be found at: {self._cluster=}")
@@ -230,24 +256,113 @@ class CMORizer:
 
     def _post_init_create_data_request_tables(self):
         """
-        Loads all the tables from table directory as a mapping object.
+        Loads all the tables from table directory using ResourceLocator priority chain.
+
+        Uses 5-level priority to locate tables:
+        1. User-specified CMIP_Tables_Dir
+        2. XDG cache
+        3. Remote git download
+        4. Packaged resources
+        5. Vendored submodules
+
         A shortened version of the filename (i.e., ``CMIP6_Omon.json`` -> ``Omon``) is used as the mapping key.
         The same key format is used in CMIP6_table_id.json
         """
-        data_request_table_factory = create_factory(DataRequestTable)
-        DataRequestTableClass = data_request_table_factory.get(self.cmor_version)
-        table_dir = Path(self._general_cfg["CMIP_Tables_Dir"])
-        tables = DataRequestTableClass.table_dict_from_directory(table_dir)
+        from .resource_locator import TableLocator
+
+        user_table_dir = self._general_cfg.get("CMIP_Tables_Dir")
+        table_version = self._general_cfg.get("CMIP_Tables_version")
+
+        TableLocatorClass = self._get_versioned_class(TableLocator)
+        locator = TableLocatorClass(version=table_version, user_path=user_table_dir)
+        table_dir = locator.locate()
+
+        if table_dir is None:
+            raise FileNotFoundError(
+                f"Could not locate {self.cmor_version} tables from any source. "
+                "Check that git submodules are initialized or internet connection is available."
+            )
+
+        DataRequestTableClass = self._get_versioned_class(DataRequestTable)
+        tables = {t.table_id: t for t in DataRequestTableClass.find_all(table_dir)}
         self._general_cfg["tables"] = self.tables = tables
+        logger.debug(f"Loaded {len(tables)} CMOR tables from {table_dir}")
 
     def _post_init_create_data_request(self):
         """
-        Creates a DataRequest object from the tables directory.
+        Creates a DataRequest object from the tables directory using ResourceLocator.
+
+        Uses TableLocator with 5-level priority chain to locate tables.
         """
-        table_dir = self._general_cfg["CMIP_Tables_Dir"]
-        data_request_factory = create_factory(DataRequest)
-        DataRequestClass = data_request_factory.get(self.cmor_version)
+        from .resource_locator import TableLocator
+
+        user_table_dir = self._general_cfg.get("CMIP_Tables_Dir")
+        table_version = self._general_cfg.get("CMIP_Tables_version")
+
+        TableLocatorClass = self._get_versioned_class(TableLocator)
+        locator = TableLocatorClass(version=table_version, user_path=user_table_dir)
+        table_dir = locator.locate()
+
+        DataRequestClass = self._get_versioned_class(DataRequest)
         self.data_request = DataRequestClass.from_directory(table_dir)
+        logger.debug(f"Created DataRequest from {table_dir}")
+
+    def _post_init_create_cmip7_interface(self):
+        """
+        Initialize metadata interface using factory pattern.
+
+        This method creates an optional interface instance for metadata queries.
+        Uses MetadataLocator with priority chain:
+        1. User-specified metadata path
+        2. XDG cache directory
+        3. Generated/downloaded metadata
+        4. Packaged resources
+        5. Vendored data
+
+        For CMIP7, creates CMIP7Interface if API is available.
+        For CMIP6, metadata_file will be None (expected).
+
+        Configuration example:
+            general:
+                cmor_version: CMIP7
+                CMIP7_DReq_metadata: /path/to/metadata.json  # optional
+                CMIP7_DReq_version: v1.2.2.2  # optional
+                cmip7_experiments_file: /path/to/experiments.json  # optional
+        """
+        from .resource_locator import MetadataLocator
+
+        user_metadata_path = self._general_cfg.get("CMIP7_DReq_metadata")
+        dreq_version = self._general_cfg.get("CMIP7_DReq_version")
+
+        MetadataLocatorClass = self._get_versioned_class(MetadataLocator)
+        locator = MetadataLocatorClass(version=dreq_version, user_path=user_metadata_path)
+        metadata_file = locator.locate()
+
+        # For CMIP6, metadata_file will be None (expected)
+        if self.cmor_version == "CMIP7" and metadata_file and CMIP7_API_AVAILABLE:
+            logger.debug(f"Loading CMIP7 interface with metadata: {metadata_file}")
+            self.cmip7_interface = CMIP7Interface()
+            self.cmip7_interface.load_metadata(metadata_file=str(metadata_file))
+
+            # Optionally load experiments data if configured
+            experiments_file = self._general_cfg.get("cmip7_experiments_file")
+            if experiments_file and Path(experiments_file).exists():
+                self.cmip7_interface.load_experiments_data(str(experiments_file))
+                logger.debug("CMIP7 interface initialized with experiments data")
+            else:
+                logger.debug("CMIP7 interface initialized (without experiments data)")
+        else:
+            self.cmip7_interface = None
+            if self.cmor_version == "CMIP7" and not metadata_file:
+                logger.warning(
+                    "Could not locate CMIP7 metadata from any source. "
+                    "CMIP7 interface will not be available. "
+                    "Make sure export_dreq_lists_json is installed or specify CMIP7_DReq_metadata."
+                )
+            elif self.cmor_version == "CMIP7" and not CMIP7_API_AVAILABLE:
+                logger.warning(
+                    "CMIP7 Data Request API not available. " "Install with: pip install CMIP7-data-request-api"
+                )
 
     def _post_init_populate_rules_with_tables(self):
         """
@@ -260,6 +375,7 @@ class CMORizer:
                     rule.add_table(tbl.table_id)
 
     def _post_init_populate_rules_with_data_request_variables(self):
+        logger.debug(f"Data request has {len(self.data_request.variables)} variables")
         for drv in self.data_request.variables.values():
             rule_for_var = self.find_matching_rule(drv)
             if rule_for_var is None:
@@ -276,18 +392,21 @@ class CMORizer:
 
     def _post_init_create_controlled_vocabularies(self):
         """
-        Reads the controlled vocabularies from the directory tree rooted at
-        ``<tables_dir>/CMIP6_CVs`` and stores them in the ``controlled_vocabularies``
-        attribute. This is done after the rules have been populated with the
-        tables and data request variables, which may be used to lookup the
-        controlled vocabularies.
+        Load controlled vocabularies using ResourceLocator priority chain.
+
+        If CV_Dir is not provided in config, CVLocator will use 5-level fallback:
+        1. User-specified path
+        2. XDG cache
+        3. Remote git download
+        4. Packaged resources
+        5. Vendored submodules
         """
-        table_dir = self._general_cfg["CV_Dir"]
-        controlled_vocabularies_factory = create_factory(ControlledVocabularies)
-        ControlledVocabulariesClass = controlled_vocabularies_factory.get(
-            self.cmor_version
-        )
-        self.controlled_vocabularies = ControlledVocabulariesClass.load(table_dir)
+        cv_dir = self._general_cfg.get("CV_Dir")
+        cv_version = self._general_cfg.get("CV_version")
+
+        ControlledVocabulariesClass = self._get_versioned_class(ControlledVocabularies)
+        self.controlled_vocabularies = ControlledVocabulariesClass.load(cv_dir, cv_version)
+        logger.debug(f"Loaded controlled vocabularies from {cv_dir or 'default location'}")
 
     def _post_init_populate_rules_with_controlled_vocabularies(self):
         for rule in self.rules:
@@ -317,9 +436,7 @@ class CMORizer:
         None
         """
         pymor_cfg = self._pymor_cfg
-        unit_map_file = pymor_cfg.get(
-            "dimensionless_mapping_table", DIMENSIONLESS_MAPPING_TABLE
-        )
+        unit_map_file = pymor_cfg.get("dimensionless_mapping_table", DIMENSIONLESS_MAPPING_TABLE)
         if unit_map_file is None:
             logger.warning("No dimensionless unit mappings file specified!")
             dimensionless_unit_mappings = {}
@@ -334,9 +451,7 @@ class CMORizer:
         for rule in self.rules:
             rule.match_pipelines(self.pipelines, force=force)
 
-    def find_matching_rule(
-        self, data_request_variable: DataRequestVariable
-    ) -> Rule or None:
+    def find_matching_rule(self, data_request_variable: DataRequestVariable) -> Rule or None:
         matches = []
         attr_criteria = [("cmor_variable", "variable_id")]
         for rule in self.rules:
@@ -371,7 +486,10 @@ class CMORizer:
     # FIXME: This needs a better name...
     def _rules_expand_drvs(self):
         new_rules = []
+        logger.debug(f"Expanding {len(self.rules)} rules based on data_request_variables")
         for rule in self.rules:
+            num_drvs = len(rule.data_request_variables)
+            logger.debug(f"Rule '{rule.name}' has {num_drvs} data_request_variables")
             if len(rule.data_request_variables) == 1:
                 new_rules.append(rule)
             else:
@@ -401,6 +519,7 @@ class CMORizer:
                                 new_rules.append(rule)
                     else:
                         new_rules.append(rule)
+        logger.debug(f"After expansion: {len(new_rules)} rules")
         self.rules = new_rules
 
     def _rules_depluralize_drvs(self):
@@ -466,9 +585,7 @@ class CMORizer:
         logger.info("checking frequency in netcdf file and in table...")
         errors = []
         for rule in self.rules:
-            table_freq = _frequency_from_approx_interval(
-                rule.data_request_variable.table_header.approx_interval
-            )
+            table_freq = _frequency_from_approx_interval(rule.data_request_variable.table_header.approx_interval)
             # is_subperiod from pandas does not support YE or ME notation
             table_freq = table_freq.rstrip("E")
             for input_collection in rule.inputs:
@@ -478,18 +595,14 @@ class CMORizer:
                         logger.info("No. input files found. Skipping frequency check.")
                         break
                     data_freq = fc.get(input_collection.files[0]).freq
-                is_subperiod = pd.tseries.frequencies.is_subperiod(
-                    data_freq, table_freq
-                )
+                is_subperiod = pd.tseries.frequencies.is_subperiod(data_freq, table_freq)
                 if not is_subperiod:
                     errors.append(
                         ValueError(
                             f"Freq in source file {data_freq} is not a subperiod of freq in table {table_freq}."
                         ),
                     )
-                logger.info(
-                    f"Frequency of data {data_freq}. Frequency in tables {table_freq}"
-                )
+                logger.info(f"Frequency of data {data_freq}. Frequency in tables {table_freq}")
         if errors:
             for err in errors:
                 logger.error(err)
@@ -529,9 +642,7 @@ class CMORizer:
                     if not is_unit_scalar(model_unit):
                         dimless = rule.get("dimensionless_unit_mappings", {})
                         if cmor_unit not in dimless.get(cmor_variable, {}):
-                            errors.append(
-                                f"Missing mapping for dimensionless variable {cmor_variable}"
-                            )
+                            errors.append(f"Missing mapping for dimensionless variable {cmor_variable}")
         if errors:
             for err in errors:
                 logger.error(err)
@@ -553,9 +664,20 @@ class CMORizer:
             },
             inherit_cfg=data.get("inherit", {}),
         )
-        if "rules" in data:
-            if not RULES_VALIDATOR.validate({"rules": data["rules"]}):
+        # Merge inherit values into rules before validation
+        inherit_cfg = data.get("inherit", {})
+        rules_with_inherit = []
+        for rule in data.get("rules", []):
+            # Create a new dict with inherit values, then overlay rule values
+            merged_rule = {**inherit_cfg, **rule}
+            rules_with_inherit.append(merged_rule)
+
+        if rules_with_inherit:
+            if not RULES_VALIDATOR.validate({"rules": rules_with_inherit}):
                 raise ValueError(RULES_VALIDATOR.errors)
+
+        # Use original rules (without inherit merged) for creation
+        # The inheritance will be applied later in _post_init_inherit_rules()
         for rule in data.get("rules", []):
             rule_obj = Rule.from_dict(rule)
             instance.add_rule(rule_obj)
@@ -572,6 +694,8 @@ class CMORizer:
             pipeline_obj = Pipeline.from_dict(pipeline)
             instance.add_pipeline(pipeline_obj)
 
+        logger.debug(f"Loaded {len(instance.rules)} rules from configuration")
+        logger.debug(f"Loaded {len(instance.pipelines)} pipelines from configuration")
         instance._post_init_populate_rules_with_tables()
         instance._post_init_create_data_request()
         instance._post_init_populate_rules_with_data_request_variables()
@@ -625,9 +749,7 @@ class CMORizer:
                 missing_variables.append(cmor_variable)
         if missing_variables:
             logger.warning("This CMORizer may be incomplete or badly configured!")
-            logger.warning(
-                f"Missing rules for >> {len(missing_variables)} << variables."
-            )
+            logger.warning(f"Missing rules for >> {len(missing_variables)} << variables.")
 
     def check_rules_for_output_dir(self, output_dir):
         all_files_in_output_dir = [f for f in Path(output_dir).iterdir()]
@@ -638,16 +760,18 @@ class CMORizer:
                     all_files_in_output_dir.remove(filepath)
         if all_files_in_output_dir:
             logger.warning("This CMORizer may be incomplete or badly configured!")
-            logger.warning(
-                f"Found >> {len(all_files_in_output_dir)} << files in output dir not matching any rule."
-            )
+            logger.warning(f"Found >> {len(all_files_in_output_dir)} << files in output dir not matching any rule.")
             if questionary.confirm("Do you want to view these files?").ask():
                 for filepath in all_files_in_output_dir:
                     logger.warning(filepath)
 
     def process(self, parallel=None):
         logger.debug("Process start!")
+        logger.debug(f"Processing {len(self.rules)} rules")
+        logger.debug(f"Available pipelines: {[getattr(p, 'name', 'unnamed') for p in self.pipelines]}")
         self._match_pipelines_in_rules()
+        rules_with_pipelines = sum(1 for rule in self.rules if hasattr(rule, "pipeline") and rule.pipeline is not None)
+        logger.debug(f"Matched pipelines to {rules_with_pipelines} rules")
         if parallel is None:
             parallel = self._pymor_cfg.get("parallel", True)
         if parallel:
@@ -751,7 +875,7 @@ class CMORizer:
         return data
 
     def _post_init_create_global_attributes_on_rules(self):
-        global_attributes_factory = create_factory(GlobalAttributes)
-        GlobalAttributesClass = global_attributes_factory.get(self.cmor_version)
+        """Create global attributes on rules using factory pattern."""
+        GlobalAttributesClass = self._get_versioned_class(GlobalAttributes)
         for rule in self.rules:
             rule.create_global_attributes(GlobalAttributesClass)

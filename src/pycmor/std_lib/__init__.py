@@ -1,7 +1,8 @@
 """
-==========================
-The Pycmor Standard Library
-==========================
+===========================
+The PyCMOR Standard Library
+===========================
+
 The standard library contains functions that are included in the default
 pipelines, and are generally used as ``step`` functions. We expose several
 useful ones:
@@ -25,11 +26,9 @@ from xarray import DataArray, Dataset
 
 from ..core.logging import logger
 from ..core.rule import Rule
+from .bounds import add_vertical_bounds as _add_vertical_bounds
 from .dataset_helpers import freq_is_coarser_than_data, get_time_label, has_time_axis
-from .exceptions import (
-    PycmorResamplingError,
-    PycmorResamplingTimeAxisIncompatibilityError,
-)
+from .exceptions import PycmorResamplingError, PycmorResamplingTimeAxisIncompatibilityError
 from .generic import load_data as _load_data
 from .generic import show_data as _show_data
 from .generic import trigger_compute as _trigger_compute
@@ -49,12 +48,11 @@ __all__ = [
     "set_global_attributes",
     "set_variable_attributes",
     "checkpoint_pipeline",
+    "add_vertical_bounds",
 ]
 
 
-def convert_units(
-    data: Union[DataArray, Dataset], rule: Rule
-) -> Union[DataArray, Dataset]:
+def convert_units(data: Union[DataArray, Dataset], rule: Rule) -> Union[DataArray, Dataset]:
     """
     Convert units of a DataArray or Dataset based upon the Data Request Variable you
     have selected. Automatically handles chemical elements and dimensionless units.
@@ -75,9 +73,7 @@ def convert_units(
     return handle_unit_conversion(data, rule)
 
 
-def time_average(
-    data: Union[DataArray, Dataset], rule: Rule
-) -> Union[DataArray, Dataset]:
+def time_average(data: Union[DataArray, Dataset], rule: Rule) -> Union[DataArray, Dataset]:
     """
     Compute the time average of a DataArray or Dataset based upon the Data Request Variable you
     have selected.
@@ -98,9 +94,7 @@ def time_average(
     return timeavg(data, rule)
 
 
-def load_data(
-    data: Union[DataArray, Dataset, None], rule: Rule
-) -> Union[DataArray, Dataset]:
+def load_data(data: Union[DataArray, Dataset, None], rule: Rule) -> Union[DataArray, Dataset]:
     """
     Load data from files according to the rule specification.
 
@@ -129,9 +123,7 @@ def load_data(
     return _load_data(data, rule)
 
 
-def get_variable(
-    data: Union[DataArray, Dataset], rule: Rule
-) -> Union[DataArray, Dataset]:
+def get_variable(data: Union[DataArray, Dataset], rule: Rule) -> Union[DataArray, Dataset]:
     """
     Extract a variable from a dataset as a DataArray.
 
@@ -160,9 +152,7 @@ def get_variable(
     return data
 
 
-def temporal_resample(
-    data: Union[DataArray, Dataset], rule: Rule
-) -> Union[DataArray, Dataset]:
+def temporal_resample(data: Union[DataArray, Dataset], rule: Rule) -> Union[DataArray, Dataset]:
     """
     Resample a DataArray or Dataset to a different temporal frequency.
 
@@ -211,9 +201,7 @@ def temporal_resample(
         )
 
 
-def trigger_compute(
-    data: Union[DataArray, Dataset], rule: Rule
-) -> Union[DataArray, Dataset]:
+def trigger_compute(data: Union[DataArray, Dataset], rule: Rule) -> Union[DataArray, Dataset]:
     """
     Trigger computation of lazy (dask-backed) data operations.
 
@@ -258,9 +246,7 @@ def show_data(data: Union[DataArray, Dataset], rule: Rule) -> Union[DataArray, D
     return _show_data(data, rule)
 
 
-def set_global_attributes(
-    data: Union[DataArray, Dataset], rule: Rule
-) -> Union[DataArray, Dataset]:
+def set_global_attributes(data: Union[DataArray, Dataset], rule: Rule) -> Union[DataArray, Dataset]:
     """
     Set global metadata attributes for a Dataset or DataArray.
 
@@ -283,9 +269,7 @@ def set_global_attributes(
     return _set_global_attributes(data, rule)
 
 
-def set_variable_attributes(
-    data: Union[DataArray, Dataset], rule: Rule
-) -> Union[DataArray, Dataset]:
+def set_variable_attributes(data: Union[DataArray, Dataset], rule: Rule) -> Union[DataArray, Dataset]:
     """
     Set variable-specific metadata attributes.
 
@@ -308,9 +292,7 @@ def set_variable_attributes(
     return set_variable_attrs(data, rule)
 
 
-def checkpoint_pipeline(
-    data: Union[DataArray, Dataset], rule: Rule
-) -> Union[DataArray, Dataset]:
+def checkpoint_pipeline(data: Union[DataArray, Dataset], rule: Rule) -> Union[DataArray, Dataset]:
     """
     Insert a checkpoint in the pipeline processing.
 
@@ -339,3 +321,66 @@ def checkpoint_pipeline(
     """
     # Implementation can be added as needed
     return data
+
+
+def add_vertical_bounds(data: Union[DataArray, Dataset], rule: Rule) -> Union[DataArray, Dataset]:
+    """
+    Add vertical coordinate bounds to a dataset (similar to cdo genlevelbounds).
+
+    This function automatically calculates and adds bounds for vertical coordinates
+    such as pressure levels (plev, plev19, etc.) or depth levels if they don't
+    already exist. This is useful for CMIP compliance where vertical bounds are
+    required for proper data interpretation.
+
+    Parameters
+    ----------
+    data : xarray.DataArray or xarray.Dataset
+        The data to add vertical bounds to. If a DataArray, it will be converted
+        to a Dataset temporarily for processing.
+    rule : Rule
+        The rule containing additional parameters (currently unused but kept for
+        consistency with other pipeline functions).
+
+    Returns
+    -------
+    xarray.DataArray or xarray.Dataset
+        The data with vertical bounds added if vertical coordinates were found.
+
+    Examples
+    --------
+    >>> import xarray as xr
+    >>> import numpy as np
+    >>> from pycmor.core.rule import Rule
+    >>> ds = xr.Dataset({
+    ...     'ta': (['time', 'plev', 'lat', 'lon'], np.random.rand(10, 8, 5, 6)),
+    ... }, coords={
+    ...     'plev': [100000, 92500, 85000, 70000, 60000, 50000, 40000, 30000],
+    ...     'lat': np.linspace(-90, 90, 5),
+    ...     'lon': np.linspace(0, 360, 6),
+    ... })
+    >>> rule = Rule(cmor_variable='ta', model_variable='ta')
+    >>> ds_with_bounds = add_vertical_bounds(ds, rule)
+    >>> 'plev_bnds' in ds_with_bounds
+    True
+
+    Notes
+    -----
+    This function is similar to CDO's genlevelbounds operator. It automatically
+    detects common vertical coordinate names including:
+    - Pressure levels: plev, plev19, plev8, lev, level, pressure
+    - Depth: depth
+    - Height: height, alt, altitude
+
+    See Also
+    --------
+    pycmor.std_lib.bounds.add_vertical_bounds : The underlying implementation
+    """
+    # Handle DataArray input by converting to Dataset
+    if isinstance(data, DataArray):
+        var_name = data.name or "data"
+        ds = data.to_dataset(name=var_name)
+        ds_with_bounds = _add_vertical_bounds(ds)
+        return ds_with_bounds[var_name]
+
+    # Dataset input - pass through directly
+    return _add_vertical_bounds(data)

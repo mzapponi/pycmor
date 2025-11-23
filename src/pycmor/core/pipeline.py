@@ -94,9 +94,7 @@ class Pipeline:
         raw_steps = copy.deepcopy(self._steps)
         prefect_tasks = []
         for i, step in enumerate(self._steps):
-            logger.debug(
-                f"[{i+1}/{len(self._steps)}] Converting step {step.__name__} to Prefect task."
-            )
+            logger.debug(f"[{i+1}/{len(self._steps)}] Converting step {step.__name__} to Prefect task.")
             prefect_tasks.append(
                 Task(
                     fn=step,
@@ -131,9 +129,7 @@ class Pipeline:
         cmor_name = rule_spec.get("cmor_name")
         rule_name = rule_spec.get("name", cmor_name)
         if self._cluster is None:
-            logger.warning(
-                "No cluster assigned to this pipeline. Using local Dask cluster."
-            )
+            logger.warning("No cluster assigned to this pipeline. Using local Dask cluster.")
             dask_scheduler_address = None
         else:
             dask_scheduler_address = self._cluster.scheduler.address
@@ -174,15 +170,11 @@ class Pipeline:
 
     @classmethod
     def from_qualname_list(cls, qualnames: list, name=None, **kwargs):
-        return cls.from_list(
-            [get_callable_by_name(name) for name in qualnames], name=name, **kwargs
-        )
+        return cls.from_list([get_callable_by_name(name) for name in qualnames], name=name, **kwargs)
 
     @classmethod
     def from_callable_strings(cls, step_strings: list, name=None, **kwargs):
-        return cls.from_list(
-            [get_callable(name) for name in step_strings], name=name, **kwargs
-        )
+        return cls.from_list([get_callable(name) for name in step_strings], name=name, **kwargs)
 
     @classmethod
     def from_dict(cls, data):
@@ -243,13 +235,19 @@ class FrozenPipeline(Pipeline):
 class DefaultPipeline(FrozenPipeline):
     """
     The DefaultPipeline class is a subclass of the Pipeline class. It is designed to be a general-purpose pipeline
-    for data processing. It includes steps for loading data and handling unit conversion. The specific steps are fixed
-    and cannot be customized, only the name of the pipeline can be customized.
+    for data processing. It includes steps for loading data, adding vertical bounds, handling unit conversion,
+    and setting CMIP-compliant attributes. The specific steps are fixed and cannot be customized, only the name
+    of the pipeline can be customized.
 
     Parameters
     ----------
     name : str, optional
         The name of the pipeline. If not provided, it defaults to "pycmor.pipeline.DefaultPipeline".
+
+    Notes
+    -----
+    The pipeline includes automatic vertical bounds calculation for datasets with vertical coordinates
+    (pressure levels, depth, height), ensuring CMIP compliance.
     """
 
     # FIXME(PG): This is not so nice. All things should come out of the std_lib,
@@ -257,6 +255,7 @@ class DefaultPipeline(FrozenPipeline):
     STEPS = (
         "pycmor.core.gather_inputs.load_mfdataset",
         "pycmor.std_lib.generic.get_variable",
+        "pycmor.std_lib.add_vertical_bounds",
         "pycmor.std_lib.timeaverage.timeavg",
         "pycmor.std_lib.units.handle_unit_conversion",
         "pycmor.std_lib.global_attributes.set_global_attributes",
