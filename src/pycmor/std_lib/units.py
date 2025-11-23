@@ -81,7 +81,7 @@ def _get_units(
     to_unit_dimensionless_mapping = None
     cmor_variable = rule.data_request_variable.variable_id
     dimless_mapping = rule.get("dimensionless_unit_mappings", {})
-    if cmor_variable in dimless_mapping:
+    if model_unit is None and cmor_variable in dimless_mapping:
         try:
             to_unit_dimensionless_mapping = dimless_mapping.get(cmor_variable)[to_unit]
             # Check if the mapping is empty
