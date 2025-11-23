@@ -454,7 +454,10 @@ class CMIP7GlobalAttributes(GlobalAttributes):
         """
         Get table ID.
 
-        In CMIP7, we use the cmip6_table field for backward compatibility.
+        Priority:
+        1. cmip6_table field from variable metadata (CMIP7 compatibility)
+        2. table_id from rule configuration
+        3. Derive from compound_name if available (CMIP7 standard, useful for CMIP6 too)
         """
         # Check if drv is a dict or object
         if isinstance(self.drv, dict):
@@ -465,6 +468,35 @@ class CMIP7GlobalAttributes(GlobalAttributes):
         if table_id is None:
             # Fallback to user-provided
             table_id = self.rule_dict.get("table_id", None)
+
+        # If still not found, try to derive from compound_name (works for both CMIP6 and CMIP7)
+        if table_id is None:
+            compound_name = self.rule_dict.get("compound_name", None)
+            if compound_name:
+                # compound_name format: component.variable.cell_methods.frequency.grid
+                # Example: ocnBgchem.fgco2.tavg-u-hxy-sea.mon.GLB
+                parts = compound_name.split(".")
+                if len(parts) >= 5:
+                    component = parts[0]  # e.g., ocnBgchem
+                    frequency = parts[3]  # e.g., mon
+
+                    # Map component prefix to realm letter
+                    realm_map = {
+                        "atmos": "A",
+                        "ocean": "O",
+                        "ocn": "O",
+                        "ocnBgchem": "O",
+                        "seaIce": "SI",
+                        "land": "L",
+                        "landIce": "LI",
+                    }
+
+                    # Get realm letter (default to first letter if not in map)
+                    realm_letter = realm_map.get(component, component[0].upper())
+
+                    # Capitalize frequency and combine with realm
+                    # mon -> Omon, day -> Oday, etc.
+                    table_id = f"{realm_letter}{frequency}"
 
         if table_id is None:
             raise ValueError("table_id not found in variable metadata or rule_dict")
