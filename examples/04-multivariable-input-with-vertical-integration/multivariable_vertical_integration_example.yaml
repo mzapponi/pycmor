@@ -3,7 +3,7 @@ general:
   description: "CMOR configuration for AWIESM 1.1 LR"
   maintainer: "pgierz"
   email: "pgierz@awi.de"
-  cmor_version: "CMIP6"
+  cmor_version: "CMIP7"
 pycmor:
   # parallel: True
   warn_on_no_rule: False
