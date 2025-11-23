@@ -163,7 +163,6 @@ def test_save_dataset(mocker):
     rule.ga = ga_mock
     rule.data_request_variable = data_request_variable
     rule._pycmor_cfg = mock_cfg  # Use the mock object
-    rule._pymor_cfg = mock_cfg  # For backward compatibility
     rule.cmor_variable = "fgco2"
     rule.data_request_variable.table_header.table_id = "Omon"
     rule.variant_label = "r1i1p1f1"
@@ -205,7 +204,6 @@ def test_save_dataset(mocker):
         print(f"  file_timespan: {rule.file_timespan}")
         print(f"  cmor_variable: {rule.cmor_variable}")
         print(f"  model_variable: {rule.model_variable}")
-        print(f"  _pymor_cfg: {rule._pymor_cfg}")
 
         # Debug: Print the dataset info
         print("\nDataset info:")

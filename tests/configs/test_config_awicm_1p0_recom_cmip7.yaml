@@ -12,17 +12,19 @@ general:
   cmor_version: "CMIP7"
   mip: "CMIP"
   frequency: "mon"
-  CV_Dir: "/dev/null"  # FIXME: CV_Dir should not be required for CMIP7, refactor validator
+  # CV_Dir is optional - uses ResourceLoader fallback chain
   # CMIP_Tables_Dir is not needed for CMIP7 (uses packaged data)
 rules:
   - name: "temp_with_levels"
     experiment_id: "piControl"
+    activity_id: "CMIP"
     output_directory: "./output"
     source_id: "FESOM"
     institution_id: "AWI"
     grid_label: gn
     variant_label: "r1i1p1f1"
     model_component: "ocean"
+    compound_name: "ocean.thetao.mean.mon.gn"
     inputs:
       - path: "REPLACE_ME/outdata/fesom"
         pattern: "thetao.fesom..*.nc"

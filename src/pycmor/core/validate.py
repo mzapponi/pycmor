@@ -100,18 +100,30 @@ GENERAL_SCHEMA = {
             },
             "CV_Dir": {
                 "type": "string",
-                "required": True,
+                "required": False,  # Optional: uses CVLocator fallback chain
                 "is_directory": True,
+            },
+            "CV_version": {
+                "type": "string",
+                "required": False,  # Optional: defaults to "6.2.58.64" (CMIP6) or "src-data" (CMIP7)
             },
             "CMIP_Tables_Dir": {
                 "type": "string",
                 "required": False,  # Not required for CMIP7
                 "is_directory": True,
             },
+            "CMIP_Tables_version": {
+                "type": "string",
+                "required": False,  # Optional: defaults to version in TableLocator (e.g., "main")
+            },
             "CMIP7_DReq_metadata": {
                 "type": "string",
                 "required": False,  # Required only for CMIP7
                 "is_directory": False,
+            },
+            "CMIP7_DReq_version": {
+                "type": "string",
+                "required": False,  # Optional: defaults to "v1.2.2.2"
             },
         },
     },
