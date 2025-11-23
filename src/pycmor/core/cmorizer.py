@@ -162,8 +162,10 @@ class CMORizer:
 
         Examples
         --------
-        >>> DataRequestClass = self._get_versioned_class(DataRequest)
-        >>> # Returns CMIP6DataRequest if cmor_version is "CMIP6"
+        Example of how this is used internally::
+
+            DataRequestClass = self._get_versioned_class(DataRequest)
+            # Returns CMIP6DataRequest if cmor_version is "CMIP6"
         """
         factory = create_factory(base_class)
         return factory.get(self.cmor_version)
