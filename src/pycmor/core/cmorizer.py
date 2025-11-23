@@ -766,7 +766,7 @@ class CMORizer:
     def process(self, parallel=None):
         logger.debug("Process start!")
         logger.debug(f"Processing {len(self.rules)} rules")
-        logger.debug(f"Available pipelines: {[p.get('name', 'unnamed') for p in self.pipelines]}")
+        logger.debug(f"Available pipelines: {[getattr(p, 'name', 'unnamed') for p in self.pipelines]}")
         self._match_pipelines_in_rules()
         rules_with_pipelines = sum(1 for rule in self.rules if hasattr(rule, "pipeline") and rule.pipeline is not None)
         logger.debug(f"Matched pipelines to {rules_with_pipelines} rules")
