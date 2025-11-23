@@ -22,7 +22,7 @@ inherit:
 rules:
   - name: cellarea_wo
     inputs:
-      - path: ./sample_data/ 
+      - path: ./sample_data/
         pattern: wo_fesom_.*nc
     cmor_variable: wmo
     compound_name: ocean.wmo.mean.mon.gn
