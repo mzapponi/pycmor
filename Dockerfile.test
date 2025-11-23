@@ -9,6 +9,7 @@ USER root
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     git \
+    git-lfs \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
@@ -43,10 +44,20 @@ COPY --chown=$MAMBA_USER:$MAMBA_USER . .
 # Install pycmor and dev dependencies via pip (uses conda's Python/libs)
 RUN pip install --no-cache-dir ".[dev,fesom,cmip7]"
 
+# Pre-generate CMIP7 variable metadata for doctests (v1.2.2.2)
+# Uses -a (all opportunities) and -m (variables metadata output)
+# The -m file contains "Compound Name" structure used by load_metadata()
+RUN mkdir -p /home/$MAMBA_USER/.cache/pycmor/cmip7_metadata && \
+    export_dreq_lists_json -a v1.2.2.2 \
+        /tmp/experiments.json \
+        -m /home/$MAMBA_USER/.cache/pycmor/cmip7_metadata/v1.2.2.2.json && \
+    rm /tmp/experiments.json
+
 # Set environment variables for testing
 ENV PREFECT_SERVER_EPHEMERAL_STARTUP_TIMEOUT_SECONDS=300
 ENV PYTHONUNBUFFERED=1
 ENV HDF5_USE_FILE_LOCKING=FALSE
+ENV PYCMOR_CMIP7_METADATA_DIR=/home/mambauser/.cache/pycmor/cmip7_metadata
 
 # Verify installation
 RUN python -c "import h5py; print('h5py version:', h5py.__version__); print('HDF5 version:', h5py.version.hdf5_version)" && \

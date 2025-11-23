@@ -13,19 +13,33 @@ the unit conversion of an :class:`xr.DataArray` according to a :class:`.Rule`. T
 of the functions in this module are support functions.
 """
 
+import logging
 import re
 from typing import Pattern, Union
 
-import cf_xarray.units  # noqa: F401 # pylint: disable=unused-import
 import pint
-import pint_xarray
-import xarray as xr
-from chemicals import periodic_table
 
-from ..core.logging import logger
-from ..core.rule import Rule
+# Suppress pint warnings during import of cf_xarray and pint_xarray
+# These packages trigger unit redefinitions that we can't prevent
+pint_logger = logging.getLogger("pint")
+_original_level = pint_logger.level
+pint_logger.setLevel(logging.ERROR)
 
-ureg = pint_xarray.unit_registry
+import cf_xarray.units  # noqa: F401 E402 # pylint: disable=unused-import
+import pint_xarray  # noqa: F401 E402
+
+# Restore original logging level
+pint_logger.setLevel(_original_level)
+
+import xarray as xr  # noqa: E402
+from chemicals import periodic_table  # noqa: E402
+
+from ..core.logging import logger  # noqa: E402
+from ..core.rule import Rule  # noqa: E402
+
+# Get the unit registry and configure it to ignore future redefinitions
+ureg = pint.get_application_registry()
+ureg._on_redefinition = "ignore"
 
 
 def _get_units(
@@ -67,7 +81,7 @@ def _get_units(
     to_unit_dimensionless_mapping = None
     cmor_variable = rule.data_request_variable.variable_id
     dimless_mapping = rule.get("dimensionless_unit_mappings", {})
-    if cmor_variable in dimless_mapping:
+    if model_unit is None and cmor_variable in dimless_mapping:
         try:
             to_unit_dimensionless_mapping = dimless_mapping.get(cmor_variable)[to_unit]
             # Check if the mapping is empty
