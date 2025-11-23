@@ -263,6 +263,7 @@ class Rule:
             "institution_id",  # optional
             "model_component",  # optional
             "further_info_url",  # optional
+            "compound_name",  # optional, used for CMIP7 table_id derivation
         )
         # attribute `creation_date` is the time-stamp of inputs directory
         try:
