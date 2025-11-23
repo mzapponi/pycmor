@@ -662,9 +662,20 @@ class CMORizer:
             },
             inherit_cfg=data.get("inherit", {}),
         )
-        if "rules" in data:
-            if not RULES_VALIDATOR.validate({"rules": data["rules"]}):
+        # Merge inherit values into rules before validation
+        inherit_cfg = data.get("inherit", {})
+        rules_with_inherit = []
+        for rule in data.get("rules", []):
+            # Create a new dict with inherit values, then overlay rule values
+            merged_rule = {**inherit_cfg, **rule}
+            rules_with_inherit.append(merged_rule)
+
+        if rules_with_inherit:
+            if not RULES_VALIDATOR.validate({"rules": rules_with_inherit}):
                 raise ValueError(RULES_VALIDATOR.errors)
+
+        # Use original rules (without inherit merged) for creation
+        # The inheritance will be applied later in _post_init_inherit_rules()
         for rule in data.get("rules", []):
             rule_obj = Rule.from_dict(rule)
             instance.add_rule(rule_obj)
