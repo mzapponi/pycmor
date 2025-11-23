@@ -36,6 +36,12 @@ def cleanup():
             rm_file(item)
         elif item.is_dir() and item.name == "logs":
             rm_dir(item)
+
+    # Remove model_runs directory entirely (equivalent to rm -rf)
+    model_runs = current_dir / "model_runs"
+    if model_runs.exists() and model_runs.is_dir():
+        rm_dir(model_runs)
+
     print("Cleanup completed.")
 
 
